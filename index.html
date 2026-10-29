@@ -1,0 +1,1235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LockerBook — Custom Meat Processing Cut-Sheet &amp; Settlement Book</title>
+<style>
+:root{--ink:#26221e;--mut:#6f6a5e;--line:#ddd3c4;--bg:#f5f1e9;--card:#fffdf8;--acc:#7c2d26;--acc2:#a34a3a;--good:#2e6b34;--bad:#a33327;--warn:#9a6a12;--chip:#efe6d6}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;background:var(--bg);color:var(--ink);font-size:15px;line-height:1.45}
+header.top{background:var(--acc);color:#fff;padding:12px 16px;display:flex;flex-wrap:wrap;align-items:baseline;gap:8px 14px}
+header.top h1{font-size:20px;margin:0;font-weight:700}
+header.top .sub{font-size:12.5px;opacity:.88}
+main{max-width:1060px;margin:0 auto;padding:12px 12px 60px}
+nav.tabs{display:flex;gap:6px;overflow-x:auto;padding:10px 2px 4px;-webkit-overflow-scrolling:touch}
+nav.tabs button{flex:0 0 auto;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:999px;padding:8px 14px;font-size:14px;cursor:pointer;min-height:38px}
+nav.tabs button.on{background:var(--acc);color:#fff;border-color:var(--acc)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin:10px 0}
+.card h2{margin:0 0 8px;font-size:17px}
+.card h3{margin:14px 0 6px;font-size:15px}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:10px 0}
+.stat{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px}
+.stat .k{font-size:12px;color:var(--mut);text-transform:uppercase;letter-spacing:.04em}
+.stat .v{font-size:21px;font-weight:700;margin-top:2px}
+.stat .n{font-size:12px;color:var(--mut)}
+.tblwrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
+table{border-collapse:collapse;width:100%;font-size:14px}
+th,td{border-bottom:1px solid var(--line);padding:7px 8px;text-align:left;vertical-align:top}
+th{font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--mut)}
+td.num,th.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+tr.tot td{font-weight:700;border-top:2px solid var(--ink);border-bottom:none}
+.btn{display:inline-block;border:1px solid var(--acc);background:var(--acc);color:#fff;border-radius:9px;padding:8px 14px;font-size:14px;cursor:pointer;min-height:38px}
+.btn.ghost{background:transparent;color:var(--acc)}
+.btn.small{padding:5px 10px;min-height:32px;font-size:13px;min-height:40px;}
+.btn.danger{background:var(--bad);border-color:var(--bad)}
+.btn.armed{background:#fff;color:var(--bad);border-color:var(--bad)}
+.btn:disabled{opacity:.5;cursor:default}
+form.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px}
+label.f{display:block;font-size:12.5px;color:var(--mut)}
+label.f input,label.f select,label.f textarea{display:block;width:100%;margin-top:3px;padding:8px;border:1px solid var(--line);border-radius:8px;font-size:14px;background:#fff;color:var(--ink)}
+.chip{display:inline-block;background:var(--chip);border-radius:999px;padding:2px 9px;font-size:12px;margin:1px 2px}
+.chip.ready{background:#dcebd8;color:var(--good);font-weight:600}
+.chip.over{ background:#f3d9d4;color:var(--bad);font-weight:600}
+.mut{color:var(--mut)} .small{font-size:12.5px} .big{font-size:17px;font-weight:700}
+.rowflex{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.spread{justify-content:space-between}
+.sharebox{border:1px dashed var(--line);border-radius:10px;padding:10px;margin:8px 0;background:#fbf7ee}
+.notice{background:#fdf3e0;border:1px solid #e5cf9e;border-radius:10px;padding:10px 12px;margin:10px 0;font-size:13.5px}
+.err{background:#f9e3df;border:1px solid #d8a79e;border-radius:10px;padding:10px 12px;margin:10px 0;font-size:13.5px}
+#printArea{display:none}
+@media print{
+  header.top,nav.tabs,#app,.noprint{display:none !important}
+  #printArea{display:block;color:#000}
+  body{background:#fff}
+}
+@media (max-width:560px){
+  .stat .v{font-size:18px}
+  th,td{padding:6px 5px;font-size:13px}
+}
+</style>
+</head>
+<body>
+<header class="top">
+  <h1>🥩 LockerBook</h1>
+  <div class="sub">Custom meat processing — intake queue, cut sheets &amp; split-share settlements. Offline, no subscription.</div>
+</header>
+<main>
+  <nav class="tabs" id="tabs"></nav>
+  <div id="app"></div>
+</main>
+<div id="printArea"></div>
+<script>
+"use strict";
+/* ================= LockerBook — model ================= */
+var LB_KEY = "lockerbook_v1";
+var SPECIES = [
+  {k:"beef", label:"Beef"},
+  {k:"hog", label:"Hog / Pork"},
+  {k:"lamb", label:"Lamb / Goat"},
+  {k:"deer", label:"Deer / Wild Game"}
+];
+var STATUSES = ["Booked","On the rail","Cutting","Ready for pickup"];
+var FRAC_PRESETS = [
+  {label:"Whole", frac:1},
+  {label:"Half", frac:0.5},
+  {label:"Quarter", frac:0.25},
+  {label:"Third", frac:0.3333}
+];
+
+var CUT_TEMPLATES = {
+  beef: [
+    {k:"steaks", label:"Steaks — cuts wanted", type:"text", ph:"Ribeye, T-bone, sirloin, round…"},
+    {k:"thickness", label:"Steak thickness", type:"select", opts:["3/4 in","1 in","1 1/4 in","1 1/2 in"]},
+    {k:"perPkg", label:"Steaks per package", type:"select", opts:["1","2","4","Family pack"]},
+    {k:"roasts", label:"Roasts", type:"text", ph:"Chuck & rump, 3–4 lb each"},
+    {k:"grindPct", label:"Trim to ground beef (%)", type:"num"},
+    {k:"patties", label:"Ground beef made into patties (lb)", type:"num"},
+    {k:"ribs", label:"Ribs", type:"select", opts:["Short ribs","Spare ribs","Grind them","None"]},
+    {k:"stew", label:"Stew meat (lb)", type:"num"},
+    {k:"organs", label:"Heart / liver / tongue", type:"select", opts:["Keep all","Heart only","None"]},
+    {k:"bones", label:"Soup bones", type:"select", opts:["Keep","Toss"]},
+    {k:"pack", label:"Packaging", type:"select", opts:["Paper wrap","Vacuum seal"]},
+    {k:"notes", label:"Special instructions", type:"area"}
+  ],
+  hog: [
+    {k:"chops", label:"Pork chops — thickness", type:"select", opts:["1/2 in","3/4 in","1 in","Boneless"]},
+    {k:"perPkg", label:"Chops per package", type:"select", opts:["2","4","6","Family pack"]},
+    {k:"ham", label:"Ham", type:"select", opts:["Cured & smoked, halves","Cured & smoked, whole","Fresh, halves","Grind it"]},
+    {k:"bacon", label:"Bacon / side pork", type:"select", opts:["Cured & smoked, sliced","Fresh side pork","Grind it"]},
+    {k:"shoulder", label:"Shoulder / butt", type:"select", opts:["Roasts","Steaks","Roasts & steaks","Grind it"]},
+    {k:"sausageLb", label:"Sausage (lb)", type:"num"},
+    {k:"sausageType", label:"Sausage type", type:"select", opts:["Bulk, regular","Bulk, hot","Links, regular","Links, Italian","Maple bulk","None"]},
+    {k:"ribs", label:"Ribs", type:"select", opts:["Keep whole","Cut in half","Grind them"]},
+    {k:"pack", label:"Packaging", type:"select", opts:["Paper wrap","Vacuum seal"]},
+    {k:"notes", label:"Special instructions", type:"area"}
+  ],
+  lamb: [
+    {k:"chops", label:"Chops", type:"select", opts:["Loin & rib chops","Shoulder chops too","None — roasts & grind"]},
+    {k:"leg", label:"Leg", type:"select", opts:["Whole, bone-in","Halves","Boneless, tied","Steaks"]},
+    {k:"shoulder", label:"Shoulder", type:"select", opts:["Roast, bone-in","Boneless roast","Grind it"]},
+    {k:"grindLb", label:"Ground lamb (lb)", type:"num"},
+    {k:"rack", label:"Rack / ribs", type:"select", opts:["Keep rack whole","Riblets","Grind them"]},
+    {k:"pack", label:"Packaging", type:"select", opts:["Paper wrap","Vacuum seal"]},
+    {k:"notes", label:"Special instructions", type:"area"}
+  ],
+  deer: [
+    {k:"backstrap", label:"Backstrap / loin", type:"select", opts:["Whole","Cut into steaks","Butterflied"]},
+    {k:"steaks", label:"Hindquarter steaks", type:"select", opts:["Yes, 3/4 in","Yes, 1 in","No — roasts & grind"]},
+    {k:"roasts", label:"Roasts", type:"text", ph:"Shoulder roasts, neck roast…"},
+    {k:"grindMix", label:"Grind mix", type:"select", opts:["Plain venison","Add 10% beef fat","Add 20% beef fat","Add 10% pork fat","Add 20% pork fat","50/50 with pork"]},
+    {k:"trim", label:"Front shoulders / trim", type:"select", opts:["All to grind","Stew meat","Jerky strips"]},
+    {k:"pack", label:"Packaging", type:"select", opts:["Paper wrap","Vacuum seal"]},
+    {k:"notes", label:"Special instructions", type:"area"}
+  ]
+};
+
+/* ---------- utils ---------- */
+function esc(s){ if(s===null||s===undefined) return ""; return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#39;"); }
+function round2(n){ return Math.round((Number(n)||0)*100)/100; }
+function round1(n){ return Math.round((Number(n)||0)*10)/10; }
+function money(n){ var v = round2(n); return (v<0?"-$":"$") + Math.abs(v).toFixed(2); }
+function numOr(v, d){ var n = parseFloat(v); return isFinite(n) ? n : (d||0); }
+function clampNonNeg(n){ n = Number(n)||0; return n<0 ? 0 : n; }
+function uid(){ return "id" + Date.now().toString(36) + Math.floor(Math.random()*1e6).toString(36); }
+function pad2(n){ return (n<10?"0":"")+n; }
+function todayStr(){ var d=new Date(); return d.getFullYear()+"-"+pad2(d.getMonth()+1)+"-"+pad2(d.getDate()); }
+function validISODate(s){
+  if(typeof s!=="string") return false;
+  var m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/); if(!m) return false;
+  var y=+m[1], mo=+m[2], da=+m[3];
+  if(mo<1||mo>12||da<1||da>31) return false;
+  var d = new Date(Date.UTC(y, mo-1, da));
+  return d.getUTCFullYear()===y && d.getUTCMonth()===mo-1 && d.getUTCDate()===da;
+}
+function daysBetween(a, b){ /* whole days from a to b (b - a), ISO strings */
+  if(!validISODate(a)||!validISODate(b)) return 0;
+  var pa=a.split("-"), pb=b.split("-");
+  var ua=Date.UTC(+pa[0],+pa[1]-1,+pa[2]), ub=Date.UTC(+pb[0],+pb[1]-1,+pb[2]);
+  return Math.round((ub-ua)/86400000);
+}
+function addDays(iso, n){
+  if(!validISODate(iso)) return iso;
+  var p=iso.split("-"); var d=new Date(Date.UTC(+p[0],+p[1]-1,+p[2]));
+  d.setUTCDate(d.getUTCDate()+n);
+  return d.getUTCFullYear()+"-"+pad2(d.getUTCMonth()+1)+"-"+pad2(d.getUTCDate());
+}
+function fmtDate(iso){
+  if(!validISODate(iso)) return "—";
+  var p=iso.split("-");
+  var months=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  return months[+p[1]-1]+" "+(+p[2])+", "+p[0];
+}
+function speciesLabel(k){ for(var i=0;i<SPECIES.length;i++) if(SPECIES[i].k===k) return SPECIES[i].label; return k||""; }
+
+/* ---------- state ---------- */
+function defaultSettings(){
+  return { shopName:"", killFees:{beef:95, hog:65, lamb:55, deer:85}, rate:0.95, storagePerWeek:10, freeDays:7 };
+}
+function blankShare(family, frac, weight){
+  return { id:uid(), family:family||"", fracLabel: frac===1?"Whole":(frac===0.5?"Half":(frac===0.25?"Quarter":"Custom")),
+    frac:frac, weight:weight||0, deposit:0, paid:0, pickedUp:false, pickupDate:"", cut:{}, extras:[] };
+}
+function seedState(){
+  var t = todayStr();
+  var a1 = { id:uid(), sample:true, tag:"B-104", owner:"Dale Renner", species:"beef",
+    killDate:addDays(t,-12), hangDate:addDays(t,-12), liveWt:1310, hangWt:800,
+    status:"Ready for pickup", readyDate:addDays(t,-4), notes:"Angus steer, Renner ranch.",
+    shares:[
+      { id:uid(), family:"Renner family", fracLabel:"Half", frac:0.5, weight:402, deposit:150, paid:0, pickedUp:false, pickupDate:"",
+        cut:{steaks:"Ribeye, T-bone, sirloin", thickness:"1 in", perPkg:"2", roasts:"Chuck & rump, 3-4 lb", grindPct:60, patties:30, ribs:"Short ribs", stew:10, organs:"Keep all", bones:"Keep", pack:"Paper wrap", notes:""},
+        extras:[{desc:"Beef patties (forming)", qty:30, unit:"lb", rate:0.75}] },
+      { id:uid(), family:"Cole family", fracLabel:"Half", frac:0.5, weight:398, deposit:200, paid:0, pickedUp:false, pickupDate:"",
+        cut:{steaks:"Sirloin & round", thickness:"3/4 in", perPkg:"4", roasts:"Rump only, 4-5 lb", grindPct:75, patties:0, ribs:"Grind them", stew:0, organs:"None", bones:"Toss", pack:"Vacuum seal", notes:"Lean grind — 90/10 if you can."},
+        extras:[{desc:"Vacuum seal", qty:398, unit:"lb", rate:0.10}] }
+    ]};
+  var a2 = { id:uid(), sample:true, tag:"H-27", owner:"Hannah Weiss", species:"hog",
+    killDate:addDays(t,-6), hangDate:addDays(t,-6), liveWt:268, hangWt:172,
+    status:"Cutting", readyDate:"", notes:"",
+    shares:[
+      { id:uid(), family:"Hannah Weiss", fracLabel:"Whole", frac:1, weight:172, deposit:75, paid:0, pickedUp:false, pickupDate:"",
+        cut:{chops:"3/4 in", perPkg:"4", ham:"Cured & smoked, halves", bacon:"Cured & smoked, sliced", shoulder:"Roasts & steaks", sausageLb:25, sausageType:"Bulk, regular", ribs:"Keep whole", pack:"Paper wrap", notes:""},
+        extras:[{desc:"Cure & smoke (ham + bacon)", qty:38, unit:"lb", rate:1.25},{desc:"Sausage making", qty:25, unit:"lb", rate:1.00}] }
+    ]};
+  var a3 = { id:uid(), sample:true, tag:"D-09", owner:"Marcus Feld", species:"deer",
+    killDate:addDays(t,-2), hangDate:addDays(t,-2), liveWt:0, hangWt:118,
+    status:"On the rail", readyDate:"", notes:"Whitetail buck, field dressed clean.",
+    shares:[
+      { id:uid(), family:"Marcus Feld", fracLabel:"Whole", frac:1, weight:118, deposit:50, paid:0, pickedUp:false, pickupDate:"",
+        cut:{backstrap:"Cut into steaks", steaks:"Yes, 3/4 in", roasts:"One neck roast", grindMix:"Add 20% beef fat", trim:"All to grind", pack:"Vacuum seal", notes:"Jerky from trim if there's enough."},
+        extras:[{desc:"Jerky (whole-muscle)", qty:10, unit:"lb", rate:5.00}] }
+    ]};
+  var qNames=["Alvarez family","Boone family","Kowalski family","Peters family"];
+  var a4shares = qNames.map(function(nm){
+    return { id:uid(), family:nm, fracLabel:"Quarter", frac:0.25, weight:190, deposit:100, paid:0, pickedUp:false, pickupDate:"",
+      cut:{steaks:"Mixed — butcher's choice", thickness:"1 in", perPkg:"2", roasts:"One chuck roast", grindPct:65, patties:0, ribs:"Short ribs", stew:5, organs:"None", bones:"Toss", pack:"Paper wrap", notes:""}, extras:[] };
+  });
+  var a4 = { id:uid(), sample:true, tag:"B-105", owner:"Sunrise Co-op (4-way split)", species:"beef",
+    killDate:addDays(t,-9), hangDate:addDays(t,-9), liveWt:1240, hangWt:760,
+    status:"Ready for pickup", readyDate:addDays(t,-2), notes:"One beef, four families — each share its own cut sheet.",
+    shares:a4shares };
+  return { settings: defaultSettings(), animals:[a1,a2,a3,a4] };
+}
+function load(){
+  try{
+    var raw = localStorage.getItem(LB_KEY);
+    if(!raw) return null;
+    var s = JSON.parse(raw);
+    if(!s || !Array.isArray(s.animals) || !s.settings) return null;
+    return s;
+  }catch(e){ return null; }
+}
+var S = load() || seedState();
+function save(){ try{ localStorage.setItem(LB_KEY, JSON.stringify(S)); }catch(e){} }
+save();
+
+/* ---------- money math ---------- */
+function killFeeFor(animal){ var kf = S.settings.killFees || {}; return clampNonNeg(numOr(kf[animal.species], 0)); }
+function killPortions(animal){
+  /* split the kill fee across shares by fraction; last share absorbs rounding so portions sum EXACTLY to the fee */
+  var fee = killFeeFor(animal), out = [], used = 0;
+  var shares = animal.shares || [];
+  for(var i=0;i<shares.length;i++){
+    if(i === shares.length-1){ out.push(round2(fee - used)); }
+    else { var p = round2(fee * clampNonNeg(shares[i].frac)); out.push(p); used = round2(used + p); }
+  }
+  return out;
+}
+function shareProcessing(share){ return round2(clampNonNeg(share.weight) * clampNonNeg(S.settings.rate)); }
+function extraLineTotal(ex){ return round2(clampNonNeg(ex.qty) * clampNonNeg(ex.rate)); }
+function shareExtrasTotal(share){
+  var t = 0; (share.extras||[]).forEach(function(ex){ t = round2(t + extraLineTotal(ex)); }); return t;
+}
+function storageWeeks(animal, share, asOf){
+  if(!animal.readyDate || !validISODate(animal.readyDate)) return 0;
+  var end = (share.pickedUp && validISODate(share.pickupDate)) ? share.pickupDate : (asOf || todayStr());
+  var days = daysBetween(animal.readyDate, end);
+  var beyond = days - clampNonNeg(S.settings.freeDays);
+  if(beyond <= 0) return 0;
+  return Math.ceil(beyond/7);
+}
+function storageFee(animal, share, asOf){
+  var wks = storageWeeks(animal, share, asOf);
+  return round2(wks * clampNonNeg(S.settings.storagePerWeek) * clampNonNeg(share.frac));
+}
+function shareBill(animal, idx, asOf){
+  var share = animal.shares[idx];
+  var portions = killPortions(animal);
+  var kill = portions[idx] || 0;
+  var proc = shareProcessing(share);
+  var extras = shareExtrasTotal(share);
+  var storage = storageFee(animal, share, asOf);
+  var total = round2(kill + proc + extras + storage);
+  var deposit = clampNonNeg(share.deposit), paid = clampNonNeg(share.paid);
+  return { kill:kill, processing:proc, extras:extras, storage:storage, total:total,
+           deposit:deposit, paid:paid, balance:round2(total - deposit - paid), weeks:storageWeeks(animal, share, asOf) };
+}
+function animalBill(animal, asOf){
+  var tot = {kill:0, processing:0, extras:0, storage:0, total:0, deposit:0, paid:0, balance:0};
+  (animal.shares||[]).forEach(function(sh, i){
+    var b = shareBill(animal, i, asOf);
+    tot.kill = round2(tot.kill + b.kill); tot.processing = round2(tot.processing + b.processing);
+    tot.extras = round2(tot.extras + b.extras); tot.storage = round2(tot.storage + b.storage);
+    tot.total = round2(tot.total + b.total); tot.deposit = round2(tot.deposit + b.deposit);
+    tot.paid = round2(tot.paid + b.paid); tot.balance = round2(tot.balance + b.balance);
+  });
+  return tot;
+}
+function allPickedUp(animal){ return (animal.shares||[]).length>0 && animal.shares.every(function(sh){ return sh.pickedUp; }); }
+function displayStatus(animal){ return allPickedUp(animal) ? "Picked up" : animal.status; }
+function daysHanging(animal, asOf){
+  var from = validISODate(animal.hangDate) ? animal.hangDate : animal.killDate;
+  if(!validISODate(from)) return 0;
+  return Math.max(0, daysBetween(from, asOf || todayStr()));
+}
+function findAnimal(id){ for(var i=0;i<S.animals.length;i++) if(S.animals[i].id===id) return S.animals[i]; return null; }
+
+/* ---------- sample-data detection ---------- */
+/* New seeds carry sample:true. Books saved by earlier versions have no flag,
+   so the known seed tag+owner pairs are recognised too — a buyer's own animal
+   only matches if it reuses both a seed tag AND its seed owner name. */
+var KNOWN_SAMPLE = { "B-104":"Dale Renner", "H-27":"Hannah Weiss", "D-09":"Marcus Feld", "B-105":"Sunrise Co-op (4-way split)" };
+function isKnownSample(tag, owner){ return KNOWN_SAMPLE[String(tag||"")] === String(owner||""); }
+function isSampleAnimal(a){ return !!a && (a.sample === true || isKnownSample(a.tag, a.owner)); }
+function sampleCount(){ var n = 0; S.animals.forEach(function(a){ if(isSampleAnimal(a)) n++; }); return n; }
+function sampleChip(a){ return isSampleAnimal(a) ? ' <span class="chip" style="background:#ffe1a8;color:#7a4d00;font-weight:600">Sample</span>' : ""; }
+function askConfirm(q){ try { return (typeof confirm === "function") ? confirm(q) : true; } catch(e){ return true; } }
+
+/* ---------- import sanitizer ---------- */
+function sanitizeShare(raw){
+  if(!raw || typeof raw!=="object") return null;
+  var frac = parseFloat(raw.frac);
+  if(!isFinite(frac) || frac<=0) frac = 1;
+  if(frac>1) frac = 1;
+  var cut = {};
+  if(raw.cut && typeof raw.cut==="object"){ for(var k in raw.cut){ cut[String(k).slice(0,40)] = String(raw.cut[k]).slice(0,300); } }
+  var extras = [];
+  if(Array.isArray(raw.extras)){ raw.extras.forEach(function(ex){
+    if(!ex || typeof ex!=="object") return;
+    extras.push({ desc:String(ex.desc||"").slice(0,120), qty:clampNonNeg(numOr(ex.qty,0)), unit: ex.unit==="each"?"each":"lb", rate:clampNonNeg(numOr(ex.rate,0)) });
+  }); }
+  return { id: typeof raw.id==="string" && raw.id ? raw.id : uid(),
+    family:String(raw.family||"").slice(0,120), fracLabel:String(raw.fracLabel||"").slice(0,20) || "Custom",
+    frac:frac, weight:clampNonNeg(numOr(raw.weight,0)), deposit:clampNonNeg(numOr(raw.deposit,0)), paid:clampNonNeg(numOr(raw.paid,0)),
+    pickedUp: !!raw.pickedUp, pickupDate: validISODate(raw.pickupDate) ? raw.pickupDate : "", cut:cut, extras:extras };
+}
+function sanitizeAnimal(raw){
+  if(!raw || typeof raw!=="object") return null;
+  var sp = String(raw.species||"beef");
+  var okSp = {beef:1,hog:1,lamb:1,deer:1};
+  if(!okSp[sp]) sp = "beef";
+  var shares = [];
+  if(Array.isArray(raw.shares)){ raw.shares.forEach(function(sh){ var s2 = sanitizeShare(sh); if(s2) shares.push(s2); }); }
+  if(!shares.length) shares.push(blankShare(String(raw.owner||""), 1, clampNonNeg(numOr(raw.hangWt,0))));
+  var st = String(raw.status||"Booked");
+  if(STATUSES.indexOf(st)<0) st = "Booked";
+  return { id: typeof raw.id==="string" && raw.id ? raw.id : uid(), sample: (!!raw.sample || isKnownSample(raw.tag, raw.owner)),
+    tag:String(raw.tag||"").slice(0,40), owner:String(raw.owner||"").slice(0,120), species:sp,
+    killDate: validISODate(raw.killDate) ? raw.killDate : "",
+    hangDate: validISODate(raw.hangDate) ? raw.hangDate : "",
+    liveWt: clampNonNeg(numOr(raw.liveWt,0)), hangWt: clampNonNeg(numOr(raw.hangWt,0)),
+    status: st, readyDate: validISODate(raw.readyDate) ? raw.readyDate : "",
+    notes:String(raw.notes||"").slice(0,1000), shares:shares };
+}
+function sanitizeState(raw){
+  if(!raw || typeof raw!=="object" || raw.app!=="lockerbook" || !Array.isArray(raw.animals)) return null;
+  var settings = defaultSettings();
+  if(raw.settings && typeof raw.settings==="object"){
+    settings.shopName = String(raw.settings.shopName||"").slice(0,120);
+    if(raw.settings.killFees && typeof raw.settings.killFees==="object"){
+      ["beef","hog","lamb","deer"].forEach(function(k){ settings.killFees[k] = clampNonNeg(numOr(raw.settings.killFees[k], settings.killFees[k])); });
+    }
+    settings.rate = clampNonNeg(numOr(raw.settings.rate, settings.rate));
+    settings.storagePerWeek = clampNonNeg(numOr(raw.settings.storagePerWeek, settings.storagePerWeek));
+    settings.freeDays = Math.floor(clampNonNeg(numOr(raw.settings.freeDays, settings.freeDays)));
+  }
+  var animals = [];
+  raw.animals.forEach(function(a){ var s2 = sanitizeAnimal(a); if(s2) animals.push(s2); });
+  return { settings:settings, animals:animals, legal:(raw.legal && typeof raw.legal==="object") ? { termsVersion: String(raw.legal.termsVersion || ""), acceptedDate: String(raw.legal.acceptedDate || ""), disclaimerShown: !!raw.legal.disclaimerShown } : null };
+}
+function exportData(){ return JSON.stringify({ app:"lockerbook", version:1, settings:S.settings, animals:S.animals, legal:S.legal || null }, null, 2); }
+function importData(text){
+  var parsed;
+  try{ parsed = JSON.parse(text); }catch(e){ return {ok:false, error:"That file isn't valid JSON."}; }
+  var clean = sanitizeState(parsed);
+  if(!clean) return {ok:false, error:"That file isn't a LockerBook backup (tag check failed). Nothing was changed."};
+  if(!askConfirm("Replace the current book ("+S.animals.length+" animals) with this backup ("+clean.animals.length+" animals)? This cannot be undone.")) return {ok:false, error:"Import cancelled — the book was not changed.", cancelled:true};
+  S = clean; save();
+  return {ok:true, count:clean.animals.length};
+}
+
+/* ================= LockerBook — UI ================= */
+var UI = { tab:"dashboard", animalId:null, shareIdx:0, editId:null, armDelete:null, armClear:false, msg:"", err:"", draft:null };
+var TABS = [
+  {k:"dashboard", label:"Dashboard"},
+  {k:"queue", label:"Queue"},
+  {k:"animals", label:"Intake & Animals"},
+  {k:"cuts", label:"Cut Sheets"},
+  {k:"billing", label:"Billing & Settlements"},
+  {k:"pickup", label:"Pickup & Storage"},
+  {k:"settings", label:"Settings & Help"}
+];
+function el(id){ return document.getElementById(id); }
+function go(tab){ UI.tab = tab; UI.armDelete = null; UI.draft = null; render(); if(window.scrollTo) window.scrollTo(0,0); }
+function render(){
+  var nav = "";
+  TABS.forEach(function(t){ nav += '<button class="'+(UI.tab===t.k?"on":"")+'" onclick="UIgo(\''+t.k+'\')">'+t.label+'</button>'; });
+  el("tabs").innerHTML = nav;
+  var html = "";
+  if(UI.msg) html += '<div class="notice">'+esc(UI.msg)+'</div>';
+  if(UI.err) html += '<div class="err">'+esc(UI.err)+'</div>';
+  if(UI.tab==="dashboard") html += viewDashboard();
+  else if(UI.tab==="queue") html += viewQueue();
+  else if(UI.tab==="animals") html += viewAnimals();
+  else if(UI.tab==="cuts") html += viewCuts();
+  else if(UI.tab==="billing") html += viewBilling();
+  else if(UI.tab==="pickup") html += viewPickup();
+  else if(UI.tab==="settings") html += viewSettings();
+  el("app").innerHTML = html;
+  UI.msg = ""; UI.err = "";
+}
+function flash(m){ UI.msg = m; }
+function fail(m){ UI.err = m; }
+
+/* ---------- Dashboard ---------- */
+function viewDashboard(){
+  var asOf = todayStr();
+  var banner = "";
+  var ns = sampleCount();
+  if(ns) banner = '<div class="notice"><b>Sample data:</b> '+ns+' sample animal'+(ns===1?"":"s")+' (marked <b>Sample</b>) are in this book so you can see how LockerBook works — the balances below include them. <button class="btn ghost small" onclick="UIclearSamples()">Clear sample animals only</button></div>';
+  var inQueue = 0, hanging = 0, readyCount = 0, owed = 0, hangLbs = 0;
+  S.animals.forEach(function(a){
+    if(!allPickedUp(a)){
+      inQueue++;
+      hangLbs += clampNonNeg(a.hangWt);
+      if(a.status==="On the rail") hanging++;
+      if(a.status==="Ready for pickup") readyCount++;
+    }
+    owed = round2(owed + Math.max(0, animalBill(a, asOf).balance));
+  });
+  var h = banner + '<div class="stats">'
+    + '<div class="stat"><div class="k">Animals in the book</div><div class="v">'+inQueue+'</div><div class="n">not fully picked up</div></div>'
+    + '<div class="stat"><div class="k">On the rail</div><div class="v">'+hanging+'</div><div class="n">hanging / aging now</div></div>'
+    + '<div class="stat"><div class="k">Ready for pickup</div><div class="v">'+readyCount+'</div><div class="n">animals waiting on families</div></div>'
+    + '<div class="stat"><div class="k">Hanging weight in house</div><div class="v">'+hangLbs.toLocaleString()+' lb</div><div class="n">across open animals</div></div>'
+    + '<div class="stat"><div class="k">Balances owed</div><div class="v">'+money(owed)+'</div><div class="n">after deposits &amp; payments</div></div>'
+    + '</div>';
+  h += '<div class="card"><h2>Ready for pickup</h2>' + readyTable(asOf, true) + '</div>';
+  h += '<div class="card"><h2>Next on the rail (oldest kill first)</h2>' + queueTable(asOf, 6) + '</div>';
+  if(!S.animals.length) h += '<div class="card"><p>No animals in the book yet. Add your first intake on the <b>Intake &amp; Animals</b> tab.</p></div>';
+  return h;
+}
+function readyRows(asOf){
+  var rows = [];
+  S.animals.forEach(function(a){
+    if(a.status!=="Ready for pickup") return;
+    a.shares.forEach(function(sh, i){
+      if(sh.pickedUp) return;
+      var b = shareBill(a, i, asOf);
+      rows.push({a:a, sh:sh, idx:i, bill:b, wait: validISODate(a.readyDate)? daysBetween(a.readyDate, asOf):0});
+    });
+  });
+  rows.sort(function(x,y){ return y.wait - x.wait; });
+  return rows;
+}
+function readyTable(asOf, compact){
+  var rows = readyRows(asOf);
+  if(!rows.length) return '<p class="mut">Nothing waiting for pickup right now.</p>';
+  var h = '<div class="tblwrap"><table><tr><th>Tag</th><th>Family / share</th><th>Ready</th><th>Waiting</th><th>Storage</th><th class="num">Balance due</th></tr>';
+  rows.forEach(function(r){
+    h += '<tr><td><b>'+esc(r.a.tag)+'</b>'+sampleChip(r.a)+' <span class="mut">'+esc(speciesLabel(r.a.species))+'</span></td>'
+      + '<td>'+esc(r.sh.family||r.a.owner)+' <span class="chip">'+esc(r.sh.fracLabel)+'</span></td>'
+      + '<td>'+fmtDate(r.a.readyDate)+'</td>'
+      + '<td>'+(r.wait>0? r.wait+" d" : "today")+'</td>'
+      + '<td>'+(r.bill.storage>0? money(r.bill.storage)+" ("+r.bill.weeks+" wk)" : "—")+'</td>'
+      + '<td class="num"><b>'+money(r.bill.balance)+'</b></td></tr>';
+  });
+  return h + '</table></div>' + (compact? '<p class="small mut">Mark pickups and collect balances on the Pickup &amp; Storage tab.</p>' : '');
+}
+
+/* ---------- Queue ---------- */
+function queueRows(asOf){
+  var rows = S.animals.filter(function(a){ return !allPickedUp(a); });
+  rows.sort(function(x,y){
+    var dx = validISODate(x.killDate)? x.killDate : "9999", dy = validISODate(y.killDate)? y.killDate : "9999";
+    if(dx!==dy) return dx<dy? -1: 1;
+    return String(x.tag) < String(y.tag) ? -1 : 1;
+  });
+  return rows;
+}
+function queueTable(asOf, limit){
+  var rows = queueRows(asOf);
+  if(limit) rows = rows.slice(0, limit);
+  if(!rows.length) return '<p class="mut">The queue is empty — everything is picked up or nothing is booked.</p>';
+  var h = '<div class="tblwrap"><table><tr><th>Tag</th><th>Owner / shares</th><th>Species</th><th>Kill date</th><th>Days hanging</th><th class="num">Hang wt</th><th>Status</th></tr>';
+  rows.forEach(function(a){
+    var names = a.shares.map(function(sh){ return sh.family||a.owner; }).join(", ");
+    h += '<tr><td><b>'+esc(a.tag)+'</b>'+sampleChip(a)+'</td><td>'+esc(names)+'</td><td>'+esc(speciesLabel(a.species))+'</td>'
+      + '<td>'+fmtDate(a.killDate)+'</td><td>'+daysHanging(a, asOf)+'</td>'
+      + '<td class="num">'+clampNonNeg(a.hangWt).toLocaleString()+' lb</td>'
+      + '<td><span class="chip'+(a.status==="Ready for pickup"?" ready":"")+'">'+esc(displayStatus(a))+'</span></td></tr>';
+  });
+  return h + '</table></div>';
+}
+function viewQueue(){
+  var asOf = todayStr();
+  var h = '<div class="card"><h2>Work queue — by kill date</h2>'
+    + '<p class="small mut">Oldest kill first, so nothing over-ages on the rail. Days hanging counts from the hang date (or kill date). Change an animal\'s stage on the Intake &amp; Animals tab.</p>'
+    + queueTable(asOf, 0) + '</div>';
+  return h;
+}
+
+/* ---------- Animals (intake) ---------- */
+function fracOptions(sel){
+  var h = "";
+  FRAC_PRESETS.forEach(function(p){ h += '<option value="'+p.frac+'"'+(Math.abs(p.frac-sel)<0.0001?" selected":"")+'>'+p.label+' ('+p.frac+')</option>'; });
+  h += '<option value="custom"'+(FRAC_PRESETS.every(function(p){return Math.abs(p.frac-sel)>=0.0001;})?" selected":"")+'>Custom…</option>';
+  return h;
+}
+function shareFormRow(sh, ai, si){
+  return '<div class="sharebox"><div class="rowflex spread"><b>Share '+(si+1)+'</b>'
+    + '<button type="button" class="btn ghost small" onclick="UIdelShare(\''+ai+'\','+si+')">Remove share</button></div>'
+    + '<div class="form grid">'
+    + '<label class="f">Family / payer name<input id="shf-'+si+'-family" value="'+esc(sh.family)+'"></label>'
+    + '<label class="f">Share size<select id="shf-'+si+'-fracsel" onchange="UIfracSync('+si+')">'+fracOptions(sh.frac)+'</select></label>'
+    + '<label class="f">Fraction (0–1)<input inputmode="decimal" id="shf-'+si+'-frac" type="number" step="0.01" min="0.01" max="1" value="'+sh.frac+'"></label>'
+    + '<label class="f">Share weight (lb, from the scale)<input inputmode="decimal" id="shf-'+si+'-weight" type="number" step="0.1" min="0" value="'+(sh.weight||"")+'" placeholder="defaults to hang wt × fraction"></label>'
+    + '<label class="f">Deposit ($)<input inputmode="decimal" id="shf-'+si+'-deposit" type="number" step="0.01" min="0" value="'+(sh.deposit||0)+'"></label>'
+    + '<label class="f">Paid so far ($)<input inputmode="decimal" id="shf-'+si+'-paid" type="number" step="0.01" min="0" value="'+(sh.paid||0)+'"></label>'
+    + '</div></div>';
+}
+function viewAnimals(){
+  var h = "";
+  var editing = UI.editId ? findAnimal(UI.editId) : null;
+  var a = UI.draft || editing || { id:"", tag:"", owner:"", species:"beef", killDate:todayStr(), hangDate:todayStr(), liveWt:"", hangWt:"", status:"Booked", readyDate:"", notes:"", shares:[blankShare("",1,0)] };
+  h += '<div class="card"><h2>'+(editing? "Edit animal — "+esc(editing.tag) : "New intake")+'</h2>'
+    + '<form class="grid" onsubmit="return UIsaveAnimal(event)">'
+    + '<label class="f">Tag / ID #<input id="af-tag" required value="'+esc(a.tag)+'" placeholder="B-104"></label>'
+    + '<label class="f">Brought in by (owner)<input id="af-owner" value="'+esc(a.owner)+'" placeholder="Who dropped it off / main contact"></label>'
+    + '<label class="f">Species<select id="af-species">'+SPECIES.map(function(sp){ return '<option value="'+sp.k+'"'+(a.species===sp.k?" selected":"")+'>'+sp.label+'</option>'; }).join("")+'</select></label>'
+    + '<label class="f">Status<select id="af-status">'+STATUSES.map(function(st){ return '<option'+(a.status===st?" selected":"")+'>'+st+'</option>'; }).join("")+'</select></label>'
+    + '<label class="f">Kill date<input id="af-kill" type="date" value="'+esc(a.killDate)+'"></label>'
+    + '<label class="f">Hang date<input id="af-hang" type="date" value="'+esc(a.hangDate)+'"></label>'
+    + '<label class="f">Live weight (lb)<input inputmode="decimal" id="af-live" type="number" step="0.1" min="0" value="'+(a.liveWt||"")+'"></label>'
+    + '<label class="f">Hanging weight (lb)<input inputmode="decimal" id="af-hangwt" type="number" step="0.1" min="0" value="'+(a.hangWt||"")+'"></label>'
+    + '<label class="f">Ready-for-pickup date<input id="af-ready" type="date" value="'+esc(a.readyDate)+'"></label>'
+    + '<label class="f">Notes<textarea id="af-notes" rows="2">'+esc(a.notes)+'</textarea></label>'
+    + '</form>'
+    + '<h3>Shares — who gets (and pays for) what</h3>'
+    + '<p class="small mut">One share for a whole animal, or split it: halves, quarters, thirds, or a custom fraction per family. Each share gets its own cut sheet, extras, deposit, and settlement. Leave a share\'s weight blank and it defaults to hanging weight × fraction — replace it with the real scale weight when the share is weighed.</p>'
+    + '<div id="shareForms">'
+    + a.shares.map(function(sh, si){ return shareFormRow(sh, a.id||"new", si); }).join("")
+    + '</div>'
+    + '<div class="rowflex"><button class="btn ghost small" onclick="UIaddShare()">+ Add share</button>'
+    + '<button class="btn" onclick="UIsaveAnimal(event)">'+(editing? "Save changes" : "Add animal")+'</button>'
+    + (editing? '<button class="btn ghost" onclick="UIedit(null)">Cancel edit</button>' : '')
+    + '</div></div>';
+
+  h += '<div class="card"><h2>Animals in the book ('+S.animals.length+')</h2>';
+  if(!S.animals.length) h += '<p class="mut">No animals yet — the sample book was cleared. Add the first intake above.</p>';
+  S.animals.forEach(function(an){
+    var b = animalBill(an, todayStr());
+    h += '<div class="sharebox"><div class="rowflex spread"><div><b>'+esc(an.tag)+'</b>'+sampleChip(an)+' · '+esc(speciesLabel(an.species))
+      + ' · <span class="chip'+(displayStatus(an)==="Ready for pickup"?" ready":"")+'">'+esc(displayStatus(an))+'</span><br>'
+      + '<span class="small mut">Kill '+fmtDate(an.killDate)+' · hang '+clampNonNeg(an.hangWt).toLocaleString()+' lb · '
+      + an.shares.length+' share'+(an.shares.length===1?"":"s")+' · total '+money(b.total)+' · balance '+money(b.balance)+'</span></div>'
+      + '<div class="rowflex"><button class="btn ghost small" onclick="UIedit(\''+an.id+'\')">Edit</button>'
+      + '<button class="btn small '+(UI.armDelete===an.id?"armed":"danger")+'" onclick="UIdelAnimal(\''+an.id+'\')">'+(UI.armDelete===an.id?"Tap again to delete":"Delete")+'</button></div></div></div>';
+  });
+  return h + '</div>';
+}
+function collectShares(existingAnimal){
+  var shares = [];
+  var count = (existingAnimal && existingAnimal.shares.length) || 0;
+  /* count share forms present in the DOM */
+  var domCount = 0;
+  while(el("shf-"+domCount+"-family")) domCount++;
+  var n = Math.max(count, domCount);
+  var hangWt = numOr(el("af-hangwt").value, 0);
+  for(var i=0;i<n;i++){
+    var famEl = el("shf-"+i+"-family"); if(!famEl) continue;
+    var old = existingAnimal && existingAnimal.shares[i] ? existingAnimal.shares[i] : null;
+    var frac = numOr(el("shf-"+i+"-frac").value, old? old.frac : 1);
+    if(!(frac>0)) frac = 1; if(frac>1) frac = 1;
+    var wt = numOr(el("shf-"+i+"-weight").value, 0);
+    if(!(wt>0)) wt = round1(hangWt * frac);
+    var preset = FRAC_PRESETS.filter(function(p){ return Math.abs(p.frac-frac)<0.0001; })[0];
+    shares.push({ id: old? old.id : uid(), family: famEl.value.trim(), fracLabel: preset? preset.label : "Custom",
+      frac: frac, weight: wt, deposit: clampNonNeg(numOr(el("shf-"+i+"-deposit").value,0)), paid: clampNonNeg(numOr(el("shf-"+i+"-paid").value,0)),
+      pickedUp: old? old.pickedUp : false, pickupDate: old? old.pickupDate : "",
+      cut: old? old.cut : {}, extras: old? old.extras : [] });
+  }
+  if(!shares.length) shares.push(blankShare(el("af-owner").value.trim(), 1, hangWt));
+  return shares;
+}
+
+/* ---------- Cut sheets ---------- */
+function animalOptions(selId){
+  return S.animals.map(function(a){ return '<option value="'+a.id+'"'+(a.id===selId?" selected":"")+'>'+esc(a.tag)+' — '+esc(speciesLabel(a.species))+' ('+esc(a.owner||"")+")</option>"; }).join("");
+}
+function currentAnimal(){
+  if(UI.animalId && findAnimal(UI.animalId)) return findAnimal(UI.animalId);
+  if(S.animals.length){ UI.animalId = S.animals[0].id; return S.animals[0]; }
+  return null;
+}
+function viewCuts(){
+  var a = currentAnimal();
+  if(!a) return '<div class="card"><h2>Cut sheets</h2><p class="mut">No animals in the book yet. Add an intake first.</p></div>';
+  if(UI.shareIdx >= a.shares.length) UI.shareIdx = 0;
+  var sh = a.shares[UI.shareIdx];
+  var tmpl = CUT_TEMPLATES[a.species] || [];
+  var h = '<div class="card"><h2>Cut sheet</h2>'
+    + '<div class="form grid"><label class="f">Animal<select onchange="UIpickAnimal(this.value)">'+animalOptions(a.id)+'</select></label>'
+    + '<label class="f">Share<select onchange="UIpickShare(this.value)">'
+    + a.shares.map(function(s2,i){ return '<option value="'+i+'"'+(i===UI.shareIdx?" selected":"")+'>'+esc(s2.family||a.owner)+' — '+esc(s2.fracLabel)+'</option>'; }).join("")
+    + '</select></label></div>'
+    + '<p class="small mut"><b>'+esc(a.tag)+'</b> · '+esc(speciesLabel(a.species))+' · hang wt '+clampNonNeg(a.hangWt)+' lb · this share '+clampNonNeg(sh.weight)+' lb. This replaces the paper sheet that walks from the rail to the cooler — fill it once, print it for the cutting table.</p>'
+    + '<form class="grid" onsubmit="return UIsaveCut(event)">';
+  tmpl.forEach(function(f){
+    var v = sh.cut[f.k];
+    if(f.type==="select"){
+      h += '<label class="f">'+f.label+'<select id="cf-'+f.k+'"><option value="">—</option>'
+        + f.opts.map(function(o){ return '<option'+(v===o?" selected":"")+'>'+esc(o)+'</option>'; }).join("") + '</select></label>';
+    } else if(f.type==="num"){
+      h += '<label class="f">'+f.label+'<input inputmode="decimal" id="cf-'+f.k+'" type="number" step="0.1" min="0" value="'+(v===undefined||v===null?"":esc(v))+'"></label>';
+    } else if(f.type==="area"){
+      h += '<label class="f">'+f.label+'<textarea id="cf-'+f.k+'" rows="2">'+esc(v||"")+'</textarea></label>';
+    } else {
+      h += '<label class="f">'+f.label+'<input id="cf-'+f.k+'" value="'+esc(v||"")+'" placeholder="'+esc(f.ph||"")+'"></label>';
+    }
+  });
+  h += '</form><div class="rowflex"><button class="btn" onclick="UIsaveCut(event)">Save cut sheet</button>'
+    + '<button class="btn ghost" onclick="UIprintCut()">🖨 Print cut sheet</button></div></div>';
+  return h;
+}
+function cutSheetLines(a, sh){
+  var tmpl = CUT_TEMPLATES[a.species] || [];
+  var lines = [];
+  tmpl.forEach(function(f){
+    var v = sh.cut[f.k];
+    if(v===undefined||v===null||v===""||v===0) return;
+    lines.push({label:f.label, value:String(v)});
+  });
+  return lines;
+}
+function cutSheetHTML(a, sh){
+  var shop = S.settings.shopName || "LockerBook";
+  var h = '<h2 style="margin:0 0 2px">'+esc(shop)+' — Cut Sheet</h2>'
+    + '<p style="margin:0 0 10px">Tag <b>'+esc(a.tag)+'</b> · '+esc(speciesLabel(a.species))+' · Kill '+fmtDate(a.killDate)
+    + '<br>Share: <b>'+esc(sh.family||a.owner)+'</b> ('+esc(sh.fracLabel)+') · Share weight '+clampNonNeg(sh.weight)+' lb of '+clampNonNeg(a.hangWt)+' lb hanging</p>'
+    + '<table style="width:100%;border-collapse:collapse">';
+  cutSheetLines(a, sh).forEach(function(l){
+    h += '<tr><td style="border-bottom:1px solid #ccc;padding:5px 4px;width:45%"><b>'+esc(l.label)+'</b></td><td style="border-bottom:1px solid #ccc;padding:5px 4px">'+esc(l.value)+'</td></tr>';
+  });
+  if(a.notes) h += '<tr><td style="padding:5px 4px"><b>Intake notes</b></td><td style="padding:5px 4px">'+esc(a.notes)+'</td></tr>';
+  return h + '</table><p style="margin-top:14px" class="small">Cut by: ______________________ &nbsp; Date: __________ &nbsp; Boxes: ________</p>';
+}
+
+/* ---------- Billing ---------- */
+function viewBilling(){
+  var a = currentAnimal();
+  if(!a) return '<div class="card"><h2>Billing &amp; settlements</h2><p class="mut">No animals in the book yet. Add an intake first.</p></div>';
+  var asOf = todayStr();
+  var h = '<div class="card"><h2>Billing &amp; settlements</h2>'
+    + '<label class="f">Animal<select onchange="UIpickAnimal(this.value)">'+animalOptions(a.id)+'</select></label>'
+    + '<p class="small mut"><b>'+esc(a.tag)+'</b> · '+esc(speciesLabel(a.species))+' · hanging '+clampNonNeg(a.hangWt)+' lb · kill fee '+money(killFeeFor(a))
+    + ' · processing '+money(S.settings.rate)+'/lb on each share\'s scale weight. The kill fee is split across shares by fraction (last share absorbs the pennies, so shares always add back up to the whole animal).</p></div>';
+  a.shares.forEach(function(sh, i){
+    var b = shareBill(a, i, asOf);
+    h += '<div class="card"><h3 style="margin-top:0">'+esc(sh.family||a.owner)+' — '+esc(sh.fracLabel)+' share ('+clampNonNeg(sh.weight)+' lb)</h3>'
+      + '<div class="tblwrap"><table>'
+      + '<tr><td>Kill / slaughter fee — this share ('+Math.round(sh.frac*1000)/10+'% of '+money(killFeeFor(a))+')</td><td class="num">'+money(b.kill)+'</td></tr>'
+      + '<tr><td>Processing — '+clampNonNeg(sh.weight)+' lb × '+money(S.settings.rate)+'/lb</td><td class="num">'+money(b.processing)+'</td></tr>';
+    sh.extras.forEach(function(ex, ei){
+      h += '<tr><td>'+esc(ex.desc)+' — '+clampNonNeg(ex.qty)+' '+esc(ex.unit)+' × '+money(ex.rate)
+        + ' <button class="btn ghost small" onclick="UIdelExtra(\''+a.id+'\','+i+','+ei+')">remove</button></td><td class="num">'+money(extraLineTotal(ex))+'</td></tr>';
+    });
+    h += '<tr><td>Freezer storage'+(b.weeks? ' — '+b.weeks+' wk beyond the free '+S.settings.freeDays+' days (share of '+money(S.settings.storagePerWeek)+'/wk)' : ' — inside the free '+S.settings.freeDays+' days')+'</td><td class="num">'+money(b.storage)+'</td></tr>'
+      + '<tr class="tot"><td>Total for this share</td><td class="num">'+money(b.total)+'</td></tr>'
+      + '<tr><td>Deposit</td><td class="num">-'+money(b.deposit)+'</td></tr>'
+      + '<tr><td>Paid so far</td><td class="num">-'+money(b.paid)+'</td></tr>'
+      + '<tr class="tot"><td>Balance due</td><td class="num">'+money(b.balance)+'</td></tr>'
+      + '</table></div>'
+      + '<form class="grid" onsubmit="return UIaddExtra(event,\''+a.id+'\','+i+')">'
+      + '<label class="f">Extra — description<input id="ex-'+i+'-desc" placeholder="Sausage making, jerky, cure & smoke…"></label>'
+      + '<label class="f">Qty<input inputmode="decimal" id="ex-'+i+'-qty" type="number" step="0.1" min="0"></label>'
+      + '<label class="f">Unit<select id="ex-'+i+'-unit"><option value="lb">per lb</option><option value="each">each (flat)</option></select></label>'
+      + '<label class="f">Rate ($)<input inputmode="decimal" id="ex-'+i+'-rate" type="number" step="0.01" min="0"></label>'
+      + '</form><div class="rowflex"><button class="btn ghost small" onclick="UIaddExtra(event,\''+a.id+'\','+i+')">+ Add extra</button>'
+      + '<button class="btn ghost small" onclick="UIprintSettlement(\''+a.id+'\','+i+')">🖨 Print this share\'s settlement</button></div>'
+      + '<div class="rowflex" style="margin-top:8px"><input inputmode="decimal" id="payb-'+a.id+'-'+i+'" type="number" step="0.01" min="0" placeholder="Payment $" style="width:130px;padding:8px;border:1px solid var(--line);border-radius:8px;font-size:14px">'
+      + '<button class="btn small" onclick="UIrecordPayment(\''+a.id+'\','+i+',\'payb-'+a.id+'-'+i+'\')">💵 Record payment</button>'
+      + '<span class="small mut">Adds to "Paid so far" — no hand-adding the total.</span></div>'
+      + '</div>';
+  });
+  var ab = animalBill(a, asOf);
+  h += '<div class="card"><h3 style="margin-top:0">Whole animal — '+esc(a.tag)+'</h3>'
+    + '<p>Total <b>'+money(ab.total)+'</b> · deposits '+money(ab.deposit)+' · paid '+money(ab.paid)+' · <b>balance '+money(ab.balance)+'</b></p>'
+    + '<button class="btn ghost" onclick="UIprintSettlement(\''+a.id+'\',-1)">🖨 Print whole-animal settlement (all shares)</button></div>';
+  return h;
+}
+function settlementHTML(a, idx){
+  var asOf = todayStr();
+  var shop = S.settings.shopName || "LockerBook";
+  var h = '<h2 style="margin:0 0 2px">'+esc(shop)+' — Settlement Statement</h2>'
+    + '<p style="margin:0 0 10px">Tag <b>'+esc(a.tag)+'</b> · '+esc(speciesLabel(a.species))+' · Kill date '+fmtDate(a.killDate)+' · Hanging weight '+clampNonNeg(a.hangWt)+' lb · Processing '+money(S.settings.rate)+'/lb hanging weight</p>';
+  var list = idx<0 ? a.shares.map(function(_,i){return i;}) : [idx];
+  list.forEach(function(i){
+    var sh = a.shares[i], b = shareBill(a, i, asOf);
+    h += '<h3 style="margin:14px 0 4px">'+esc(sh.family||a.owner)+' — '+esc(sh.fracLabel)+' share ('+clampNonNeg(sh.weight)+' lb)</h3>'
+      + '<table style="width:100%;border-collapse:collapse">'
+      + '<tr><td style="padding:4px">Kill / slaughter fee (share)</td><td style="text-align:right;padding:4px">'+money(b.kill)+'</td></tr>'
+      + '<tr><td style="padding:4px">Processing ('+clampNonNeg(sh.weight)+' lb × '+money(S.settings.rate)+')</td><td style="text-align:right;padding:4px">'+money(b.processing)+'</td></tr>';
+    sh.extras.forEach(function(ex){
+      h += '<tr><td style="padding:4px">'+esc(ex.desc)+' ('+clampNonNeg(ex.qty)+' '+esc(ex.unit)+' × '+money(ex.rate)+')</td><td style="text-align:right;padding:4px">'+money(extraLineTotal(ex))+'</td></tr>';
+    });
+    h += '<tr><td style="padding:4px">Freezer storage'+(b.weeks? ' ('+b.weeks+' wk)' : '')+'</td><td style="text-align:right;padding:4px">'+money(b.storage)+'</td></tr>'
+      + '<tr><td style="padding:4px;border-top:2px solid #000"><b>Total</b></td><td style="text-align:right;padding:4px;border-top:2px solid #000"><b>'+money(b.total)+'</b></td></tr>'
+      + '<tr><td style="padding:4px">Deposit</td><td style="text-align:right;padding:4px">-'+money(b.deposit)+'</td></tr>'
+      + '<tr><td style="padding:4px">Paid</td><td style="text-align:right;padding:4px">-'+money(b.paid)+'</td></tr>'
+      + '<tr><td style="padding:4px"><b>Balance due</b></td><td style="text-align:right;padding:4px"><b>'+money(b.balance)+'</b></td></tr></table>';
+  });
+  if(idx<0){ var ab = animalBill(a, asOf); h += '<p style="margin-top:10px"><b>Whole-animal total: '+money(ab.total)+' · All-share balance: '+money(ab.balance)+'</b></p>'; }
+  return h + '<p style="margin-top:16px">Received by: ______________________ &nbsp; Date: __________</p>';
+}
+
+/* ---------- Pickup ---------- */
+function viewPickup(){
+  var asOf = todayStr();
+  var h = '<div class="card"><h2>Ready for pickup &amp; freezer storage</h2>'
+    + '<p class="small mut">Storage is free for the first '+S.settings.freeDays+' days after an animal is marked ready, then '+money(S.settings.storagePerWeek)+'/week for the whole animal — each share pays in proportion to its fraction, so a quarter share carries a quarter of the storage. Marking a share picked up freezes its storage clock.</p>'
+    + readyTable(asOf, false)
+    + '<h3>Collect &amp; mark picked up</h3>';
+  var rows = readyRows(asOf);
+  if(!rows.length) h += '<p class="mut">No shares waiting.</p>';
+  rows.forEach(function(r){
+    h += '<div class="sharebox"><div class="rowflex spread"><div><b>'+esc(r.a.tag)+'</b> — '+esc(r.sh.family||r.a.owner)+' ('+esc(r.sh.fracLabel)+')<br>'
+      + '<span class="small mut">Balance due '+money(r.bill.balance)+(r.bill.storage>0? ' incl. '+money(r.bill.storage)+' storage' : '')+'</span></div>'
+      + '<button class="btn small" onclick="UIpickup(\''+r.a.id+'\','+r.idx+')">Mark picked up today</button></div>'
+      + '<div class="rowflex" style="margin-top:6px"><input inputmode="decimal" id="payp-'+r.a.id+'-'+r.idx+'" type="number" step="0.01" min="0" placeholder="Payment $" style="width:130px;padding:8px;border:1px solid var(--line);border-radius:8px;font-size:14px">'
+      + '<button class="btn ghost small" onclick="UIrecordPayment(\''+r.a.id+'\','+r.idx+',\'payp-'+r.a.id+'-'+r.idx+'\')">💵 Record payment</button></div></div>';
+  });
+  var picked = [];
+  S.animals.forEach(function(a){ a.shares.forEach(function(sh){ if(sh.pickedUp) picked.push({a:a, sh:sh}); }); });
+  h += '<h3>Picked up ('+picked.length+')</h3>';
+  if(!picked.length) h += '<p class="mut">Nothing picked up yet.</p>';
+  picked.forEach(function(p){
+    h += '<p class="small" style="margin:4px 0"><b>'+esc(p.a.tag)+'</b> — '+esc(p.sh.family||p.a.owner)+' · '+fmtDate(p.sh.pickupDate)
+      + ' <button class="btn ghost small" onclick="UIunpickup(\''+p.a.id+'\',\''+p.sh.id+'\')">undo</button></p>';
+  });
+  return h + '</div>';
+}
+
+/* ---------- Settings & Help ---------- */
+function viewSettings(){
+  var st = S.settings;
+  var h = '<div class="card"><h2>Shop settings &amp; rates</h2><form class="grid" onsubmit="return UIsaveSettings(event)">'
+    + '<label class="f">Shop name (prints on sheets &amp; settlements)<input id="st-shop" value="'+esc(st.shopName)+'" placeholder="e.g. Renner Locker &amp; Processing"></label>'
+    + '<label class="f">Processing rate ($ per lb hanging weight)<input inputmode="decimal" id="st-rate" type="number" step="0.01" min="0" value="'+st.rate+'"></label>'
+    + '<label class="f">Freezer storage ($ per week, whole animal)<input inputmode="decimal" id="st-storage" type="number" step="0.01" min="0" value="'+st.storagePerWeek+'"></label>'
+    + '<label class="f">Free storage days after ready<input inputmode="decimal" id="st-free" type="number" step="1" min="0" value="'+st.freeDays+'"></label>';
+  SPECIES.forEach(function(sp){
+    h += '<label class="f">Kill fee — '+sp.label+' ($/head)<input inputmode="decimal" id="st-kill-'+sp.k+'" type="number" step="0.01" min="0" value="'+(st.killFees[sp.k]||0)+'"></label>';
+  });
+  h += '</form><div class="rowflex"><button class="btn" onclick="UIsaveSettings(event)">Save settings</button></div></div>';
+
+  h += '<div class="card"><h2>Backup</h2><p class="small mut">Your book lives only in this browser on this device. Export a backup file regularly; import it on a new device to move the book. Imports are tag-checked — a backup from a different app is refused.</p>'
+    + '<div class="rowflex"><button class="btn ghost" onclick="UIexport()">⬇ Export backup (JSON)</button>'
+    + '<label class="btn ghost" style="margin:0">⬆ Import backup<input id="importFile" type="file" accept=".json,application/json" style="display:none" onchange="UIimport(this)"></label></div>'
+    + '<h3>Sample data</h3><p class="small mut">The book comes loaded with four sample animals (marked <b>Sample</b>) so you can watch a split settlement compute. Clear just the samples when you\'re ready to run for real — your own animals stay. The clear-all button below removes ALL animals currently in the book.</p>'
+    + '<div class="rowflex"><button class="btn ghost" onclick="UIclearSamples()">Clear sample animals only</button>'
+    + '<button class="btn '+(UI.armClear?"armed":"danger")+'" onclick="UIclearDemo()">'+(UI.armClear?"Tap again to clear the whole book":"Clear all data / remove samples")+'</button></div></div>';
+
+  h += '<div class="card"><h2>Help — how LockerBook does the math</h2>'
+    + '<p><b>Billing.</b> Every share is billed on its own scale weight: kill fee (split by fraction) + processing at your $/lb rate on the share\'s weight + that share\'s extras (sausage, cure &amp; smoke, jerky, vacuum seal — priced per lb or flat) + freezer storage.</p>'
+    + '<p><b>Split shares.</b> When one beef goes to 2–4 families, the kill fee is divided by fraction and the last share absorbs any rounding pennies, so the shares always sum to exactly the whole animal\'s bill. Each share carries its own cut sheet — one family\'s "no patties" never touches another\'s order.</p>'
+    + '<p><b>Worked example.</b> An 800 lb beef at $0.95/lb and a $95 kill fee, split in halves weighed 402 and 398 lb: each half owes $47.50 of the kill fee; processing is 402 × $0.95 = $381.90 and 398 × $0.95 = $378.10. Add the first half\'s patties (30 lb × $0.75 = $22.50) and the second half\'s vacuum seal (398 × $0.10 = $39.80) and the shares total $451.90 and $465.40 — $917.30 together, exactly the whole animal\'s bill.</p>'
+    + '<p><b>Storage.</b> Free for the first '+st.freeDays+' days after the animal is marked ready, then '+money(st.storagePerWeek)+' per week (any part-week counts) for the whole animal, charged to each share in proportion to its fraction. A quarter share waiting 2 weeks past the free days owes 2 × '+money(st.storagePerWeek)+' × ¼ = '+money(round2(2*st.storagePerWeek*0.25))+'. Marking a share picked up stops its clock.</p>'
+    + '<p><b>Honest limits.</b> LockerBook is the book — intake, cut sheets, billing, splits, pickups. It does <b>not</b> text or email customers (an offline file can\'t), take online bookings or payments, or sync between phones. Print the ready list or settlement and make the call the way you always have — now with the number already figured.</p></div>';
+  return h;
+}
+
+/* ---------- print ---------- */
+function printHTML(html){
+  el("printArea").innerHTML = html;
+  if(window.print) window.print();
+}
+
+/* ---------- actions (referenced by inline handlers) ---------- */
+function UIgo(t){ go(t); }
+function UIpickAnimal(id){ UI.animalId = id; UI.shareIdx = 0; render(); }
+function UIpickShare(v){ UI.shareIdx = parseInt(v,10)||0; render(); }
+function UIedit(id){ UI.editId = id; UI.armDelete = null; UI.draft = null; render(); if(window.scrollTo) window.scrollTo(0,0); }
+function captureAnimalDraft(existing){
+  return { id: existing ? existing.id : "", tag: el("af-tag").value, owner: el("af-owner").value,
+    species: el("af-species").value, status: el("af-status").value, killDate: el("af-kill").value,
+    hangDate: el("af-hang").value, liveWt: el("af-live").value, hangWt: el("af-hangwt").value,
+    readyDate: el("af-ready").value, notes: el("af-notes").value, shares: collectShares(existing) };
+}
+function UIaddShare(){
+  var a = UI.editId? findAnimal(UI.editId) : null;
+  var shares = collectShares(a);
+  shares.push(blankShare("", 0.25, 0));
+  if(a){ a.shares = shares; }
+  else {
+    /* new-animal form: stash shares on a temp holder by rewriting through editId-less temp */
+    UI._draftShares = shares;
+  }
+  renderDraftShares(shares, a);
+}
+function renderDraftShares(shares, a){
+  /* simplest robust path: if editing, persist into animal; if new, keep in a hidden draft animal is complex — instead re-render form rows only */
+  var box = el("shareForms");
+  if(box){ box.innerHTML = shares.map(function(sh, si){ return shareFormRow(sh, a? a.id : "new", si); }).join(""); }
+  if(a){ /* editing: reflect in memory so collectShares sees the new row count */ }
+  UI._shareCount = shares.length;
+}
+function UIdelShare(ai, si){
+  var a = UI.editId? findAnimal(UI.editId) : null;
+  var shares = collectShares(a);
+  shares.splice(si,1);
+  if(!shares.length) shares.push(blankShare("",1,0));
+  var box = el("shareForms");
+  if(box) box.innerHTML = shares.map(function(sh, i){ return shareFormRow(sh, ai, i); }).join("");
+  UI._shareCount = shares.length;
+}
+function UIfracSync(si){
+  var sel = el("shf-"+si+"-fracsel"), inp = el("shf-"+si+"-frac");
+  if(sel && inp && sel.value!=="custom") inp.value = sel.value;
+}
+function UIsaveAnimal(ev){
+  if(ev && ev.preventDefault) ev.preventDefault();
+  var a = UI.editId? findAnimal(UI.editId) : null;
+  var tag = el("af-tag").value.trim();
+  if(!tag){ UI.draft = captureAnimalDraft(a); fail("A tag / ID # is required — everything you typed is still in the form."); render(); return false; }
+  UI.draft = null;
+  var shares = collectShares(a);
+  var data = { tag:tag, owner:el("af-owner").value.trim(), species:el("af-species").value,
+    status:el("af-status").value, killDate:el("af-kill").value, hangDate:el("af-hang").value,
+    liveWt:clampNonNeg(numOr(el("af-live").value,0)), hangWt:clampNonNeg(numOr(el("af-hangwt").value,0)),
+    readyDate:el("af-ready").value, notes:el("af-notes").value.trim(), shares:shares };
+  if(data.status==="Ready for pickup" && !validISODate(data.readyDate)) data.readyDate = todayStr();
+  if(a){ for(var k in data) a[k] = data[k]; flash("Saved "+tag+"."); }
+  else { data.id = uid(); S.animals.push(data); UI.animalId = data.id; flash("Added "+tag+" to the book."); }
+  UI.editId = null; save(); render();
+  return false;
+}
+function UIdelAnimal(id){
+  if(UI.armDelete!==id){ UI.armDelete = id; render(); return; }
+  S.animals = S.animals.filter(function(a){ return a.id!==id; });
+  if(UI.animalId===id) UI.animalId = null;
+  UI.armDelete = null; save(); flash("Animal deleted."); render();
+}
+function collectCut(a, sh){
+  (CUT_TEMPLATES[a.species]||[]).forEach(function(f){
+    var inp = el("cf-"+f.k); if(!inp) return;
+    sh.cut[f.k] = f.type==="num" ? numOr(inp.value, 0) : inp.value;
+  });
+}
+function UIsaveCut(ev){
+  if(ev && ev.preventDefault) ev.preventDefault();
+  var a = currentAnimal(); if(!a) return false;
+  var sh = a.shares[UI.shareIdx]; if(!sh) return false;
+  collectCut(a, sh);
+  save(); flash("Cut sheet saved for "+(sh.family||a.owner)+"."); render();
+  return false;
+}
+function UIprintCut(){
+  var a = currentAnimal(); if(!a) return;
+  var sh = a.shares[UI.shareIdx]; if(!sh) return;
+  collectCut(a, sh); save(); /* save the edits on screen FIRST, then print the saved sheet */
+  printHTML(cutSheetHTML(a, sh));
+}
+function UIaddExtra(ev, aid, si){
+  if(ev && ev.preventDefault) ev.preventDefault();
+  var a = findAnimal(aid); if(!a) return false;
+  var desc = el("ex-"+si+"-desc").value.trim();
+  var qty = numOr(el("ex-"+si+"-qty").value, 0), rate = numOr(el("ex-"+si+"-rate").value, 0);
+  if(!desc || !(qty>0) || !(rate>=0)){ fail("An extra needs a description, a quantity, and a rate."); render(); return false; }
+  a.shares[si].extras.push({desc:desc, qty:qty, unit:el("ex-"+si+"-unit").value, rate:rate});
+  save(); flash("Extra added."); render();
+  return false;
+}
+function UIdelExtra(aid, si, ei){
+  var a = findAnimal(aid); if(!a) return;
+  a.shares[si].extras.splice(ei,1); save(); render();
+}
+function UIprintSettlement(aid, idx){
+  var a = findAnimal(aid); if(!a) return;
+  printHTML(settlementHTML(a, idx));
+}
+function UIpickup(aid, si){
+  var a = findAnimal(aid); if(!a) return;
+  var sh = a.shares[si]; sh.pickedUp = true; sh.pickupDate = todayStr();
+  save(); flash((sh.family||a.owner)+" picked up — storage clock stopped."); render();
+}
+function UIunpickup(aid, shid){
+  var a = findAnimal(aid); if(!a) return;
+  a.shares.forEach(function(sh){ if(sh.id===shid){ sh.pickedUp = false; sh.pickupDate = ""; } });
+  save(); render();
+}
+function UIrecordPayment(aid, si, inputId){
+  var a = findAnimal(aid); if(!a) return;
+  var sh = a.shares[si]; if(!sh) return;
+  var inp = inputId ? el(inputId) : null;
+  var raw = inp ? inp.value : ((typeof prompt === "function") ? prompt("Payment amount ($) for " + (sh.family || a.owner) + ":", "") : "");
+  var amt = round2(numOr(raw, 0));
+  if(!(amt > 0)){ fail("Enter a payment amount greater than $0 — nothing was recorded."); render(); return; }
+  sh.paid = round2(clampNonNeg(sh.paid) + amt);
+  save();
+  var b = shareBill(a, si, todayStr());
+  flash("Payment " + money(amt) + " recorded for " + (sh.family || a.owner) + " — paid so far " + money(sh.paid) + ", balance due " + money(b.balance) + ".");
+  render();
+}
+function UIclearSamples(){
+  var n = sampleCount();
+  if(!n){ flash("No sample animals in the book."); render(); return; }
+  if(!askConfirm("Remove the " + n + " sample animal" + (n === 1 ? "" : "s") + " only? Your own animals and settings stay.")) return;
+  if(UI.editId && isSampleAnimal(findAnimal(UI.editId) || {})) UI.editId = null;
+  S.animals = S.animals.filter(function(a){ return !isSampleAnimal(a); });
+  if(UI.animalId && !findAnimal(UI.animalId)) UI.animalId = null;
+  save(); flash(n + " sample animal" + (n === 1 ? "" : "s") + " removed — your own book is untouched."); render();
+}
+function UIsaveSettings(ev){
+  if(ev && ev.preventDefault) ev.preventDefault();
+  S.settings.shopName = el("st-shop").value.trim();
+  S.settings.rate = clampNonNeg(numOr(el("st-rate").value, S.settings.rate));
+  S.settings.storagePerWeek = clampNonNeg(numOr(el("st-storage").value, S.settings.storagePerWeek));
+  S.settings.freeDays = Math.floor(clampNonNeg(numOr(el("st-free").value, S.settings.freeDays)));
+  SPECIES.forEach(function(sp){ S.settings.killFees[sp.k] = clampNonNeg(numOr(el("st-kill-"+sp.k).value, 0)); });
+  save(); flash("Settings saved."); render();
+  return false;
+}
+function UIexport(){
+  var blob = new Blob([exportData()], {type:"application/json"});
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement("a");
+  a.href = url; a.download = "lockerbook-backup.json";
+  if(a.click) a.click();
+  if(URL.revokeObjectURL) URL.revokeObjectURL(url);
+  flash("Backup downloaded.");
+}
+function UIimport(input){
+  var file = input && input.files && input.files[0];
+  if(!file) return;
+  var reader = new FileReader();
+  reader.onload = function(){
+    var res = importData(String(reader.result||""));
+    if(res.ok){ UI.animalId = null; flash("Backup imported — "+res.count+" animals in the book."); }
+    else fail(res.error);
+    render();
+  };
+  reader.readAsText(file);
+}
+function UIclearDemo(){
+  if(!UI.armClear){ UI.armClear = true; render(); return; }
+  S = { settings:S.settings, animals:[] };
+  UI.armClear = false; UI.animalId = null; UI.editId = null;
+  save(); flash("Book cleared — settings and rates kept."); render();
+}
+
+/* expose for QA harness */
+var LB = { get S(){ return S; }, set S(v){ S = v; },
+  esc:esc, round2:round2, round1:round1, money:money, validISODate:validISODate, daysBetween:daysBetween, addDays:addDays,
+  seedState:seedState, defaultSettings:defaultSettings, blankShare:blankShare,
+  killFeeFor:killFeeFor, killPortions:killPortions, shareProcessing:shareProcessing, extraLineTotal:extraLineTotal,
+  shareExtrasTotal:shareExtrasTotal, storageWeeks:storageWeeks, storageFee:storageFee, shareBill:shareBill, animalBill:animalBill,
+  allPickedUp:allPickedUp, displayStatus:displayStatus, daysHanging:daysHanging, findAnimal:findAnimal,
+  sanitizeState:sanitizeState, sanitizeAnimal:sanitizeAnimal, exportData:exportData, importData:importData, save:save,
+  CUT_TEMPLATES:CUT_TEMPLATES, SPECIES:SPECIES, STATUSES:STATUSES,
+  viewDashboard:viewDashboard, viewQueue:viewQueue, viewAnimals:viewAnimals, viewCuts:viewCuts,
+  viewBilling:viewBilling, viewPickup:viewPickup, viewSettings:viewSettings,
+  isSampleAnimal:isSampleAnimal, sampleCount:sampleCount, recordPayment:UIrecordPayment, clearSamples:UIclearSamples,
+  printCut:UIprintCut, saveCut:UIsaveCut, saveAnimal:UIsaveAnimal, getUI:function(){ return UI; },
+  cutSheetHTML:cutSheetHTML, settlementHTML:settlementHTML, readyRows:readyRows, queueRows:queueRows };
+if(typeof window!=="undefined") window.LB = LB;
+render();
+</script>
+
+<style id="wwLegalCss">
+#wwLegalOverlay{position:fixed;inset:0;z-index:99990;background:rgba(10,12,16,.72);display:flex;align-items:flex-start;justify-content:center;overflow-y:auto;padding:18px 12px;box-sizing:border-box}
+#wwLegalOverlay[hidden]{display:none}
+.ww-card{background:#fff;color:#16181d;max-width:560px;width:100%;border-radius:14px;padding:22px 20px;box-sizing:border-box;box-shadow:0 12px 40px rgba(0,0,0,.4)}
+.ww-appname{font-size:13px;letter-spacing:.08em;text-transform:uppercase;color:#5b6472;font-weight:700}
+.ww-card h2{margin:6px 0 10px;font-size:24px}
+.ww-sum{font-size:17px;line-height:1.45;font-weight:600;margin:10px 0}
+.ww-follow{color:#444c58;font-size:14px;line-height:1.45}
+.ww-updated{background:#fff4d6;border:1px solid #e3c566;color:#5c4a00;border-radius:8px;padding:8px 10px;font-size:14px}
+.ww-btn{display:block;width:100%;min-height:48px;margin:10px 0 0;padding:12px 14px;font-size:16px;border-radius:10px;border:1px solid #9aa3af;background:#f2f4f7;color:#16181d;cursor:pointer;box-sizing:border-box}
+.ww-btn.ww-primary{background:#14532d;border-color:#14532d;color:#fff;font-weight:700;min-height:52px}
+.ww-btn.ww-primary:disabled{opacity:.45;cursor:not-allowed}
+.ww-check{display:flex;gap:10px;align-items:flex-start;margin:14px 0 2px;font-size:15px;line-height:1.4;color:#16181d;cursor:pointer}
+.ww-check input{width:22px;height:22px;flex:0 0 auto;margin:1px 0 0;accent-color:#14532d;cursor:pointer}
+#wwLegalPanel{position:fixed;inset:0;z-index:99995;background:#fff;color:#16181d;overflow-y:auto;box-sizing:border-box}
+#wwLegalPanel[hidden]{display:none}
+.ww-panel-inner{max-width:720px;margin:0 auto;padding:16px 18px 40px;box-sizing:border-box;line-height:1.55}
+.ww-panel-inner h3{margin-top:26px}
+.ww-panel-inner h4{margin-top:20px}
+.ww-accept{background:#eef7ee;border:1px solid #b9d8b9;border-radius:8px;padding:10px 12px}
+.ww-seller{margin-top:28px;padding-top:12px;border-top:1px solid #ddd;color:#444c58}
+#wwLegalClose{min-height:48px;padding:10px 16px;font-size:16px;border-radius:10px;border:1px solid #9aa3af;background:#f2f4f7;color:#16181d;cursor:pointer}
+[data-ww-legal-card]{border:1px solid #9aa3af;border-radius:12px;padding:14px;margin:14px 0;background:rgba(127,127,127,.06)}
+[data-ww-legal-btn]{min-height:48px;padding:10px 16px;font-size:16px;border-radius:10px;border:1px solid #14532d;background:#14532d;color:#fff;font-weight:700;cursor:pointer;width:100%}
+@media print{#wwLegalOverlay,#wwLegalPanel,[data-ww-legal-card]{display:none!important}}
+</style>
+
+<!-- ===== White Wolf Legal Pattern v1.0 ===== -->
+<div id="wwLegalOverlay" hidden>
+  <div class="ww-card" role="dialog" aria-modal="true" aria-labelledby="wwLegalTitle">
+    <div class="ww-appname">LockerBook</div>
+    <h2 id="wwLegalTitle">Terms of Use</h2>
+    <p class="ww-updated" id="wwUpdatedNote" hidden>Our terms were updated (v1.0).</p>
+    <p class="ww-sum">Your data stays on your device.<br>Estimates are aids, not guarantees.<br>You&#39;re responsible for checking outputs before you rely on them.</p>
+    <p class="ww-follow">The full Terms and Disclaimer are one tap away, now and any time in Settings &#8594; Legal.</p>
+    <button type="button" class="ww-btn" id="wwReadTerms">Read the full Terms</button>
+    <button type="button" class="ww-btn" id="wwReadDisc">Read the Estimator Disclaimer</button>
+    <label class="ww-check"><input type="checkbox" id="wwAgreeCheck"> <span>I have read the disclaimer and I agree to the Terms of Use</span></label>
+    <button type="button" class="ww-btn ww-primary" id="wwAgree" disabled>I Agree</button>
+  </div>
+</div>
+<div id="wwLegalPanel" hidden>
+  <div class="ww-panel-inner">
+    <button type="button" id="wwLegalClose">&#8592; Back</button>
+    <h2>Legal</h2>
+    <p class="ww-accept" id="wwAcceptLine">You have not recorded acceptance of the Terms yet.</p>
+    <h3>Terms of Use</h3>
+    <p><strong>Version 1.0 (DRAFT — pending attorney review)</strong> <strong>Seller: White Wolf Tree Service LLC, selling digital products under the name "White Wolf Digital"</strong> <strong>Contact: whitewolfoklahoma@gmail.com</strong></p>
+<hr>
+<h4>1. What you're buying</h4>
+<p>Our apps (including ForgeFit AI, ForgeKitchen, TreeBid Pro, SnowBid, WashPrice Pro, RoofSquares, JobProfit Tracker, PastureLedger, and the other titles sold under White Wolf Digital) are single-file software tools. When you buy one, you are buying a <strong>license to use the file</strong>, not ownership of the software itself.</p>
+<h4>2. Your license</h4>
+<ul>
+<li>You may use the app for your own personal or business work.</li>
+<li>You may open it on your own devices (phone, tablet, computer) and move your</li>
+</ul>
+<p>own data between them using the app's built-in backup/export tools.</p>
+<ul>
+<li>You may <strong>not</strong> resell, redistribute, give away, upload, or share the app</li>
+</ul>
+<p>file (or a copy of it) with anyone else — including posting it online, bundling it with other products, or selling access to it.</p>
+<ul>
+<li>You may <strong>not</strong> claim the app as your own work, remove its branding or</li>
+</ul>
+<p>notices, or use it to build a competing product for resale.</p>
+<ul>
+<li>One purchase = one buyer. A business purchase covers the buyer and their</li>
+</ul>
+<p>own employees using it for that business's work; it does not cover other businesses.</p>
+<h4>3. Your data stays yours — and stays on your device</h4>
+<ul>
+<li>The current versions of our apps run <strong>entirely on your device</strong>. They have</li>
+</ul>
+<p>no accounts, no sign-in, no analytics, and they collect, transmit, and store <strong>none</strong> of your information on any server. We never see your data.</p>
+<ul>
+<li>Your records are stored in your browser/app storage on your device. **You</li>
+</ul>
+<p>are responsible for backing them up** using the app's export tools. If you clear your browser data, lose your device, or uninstall the app, your records may be permanently lost, and we cannot recover them — we never had a copy.</p>
+<ul>
+<li>Files you export (backups, quotes, PDFs) are under your control. Where you</li>
+</ul>
+<p>store or send them is up to you.</p>
+<h4>4. Estimates are tools, not guarantees</h4>
+<p>Every number our apps produce — bids, prices, costs, calorie targets, projections, schedules, totals — is an <strong>estimate generated from the information you enter and the settings you choose</strong>. Outputs are aids for your own judgment, not guarantees of price, profit, outcome, or result. You are responsible for checking any output before relying on it (see also the disclaimer that applies to your app: Health Disclaimer for fitness/nutrition apps, Estimator Disclaimer for contractor tools). If an input is wrong, the output will be wrong.</p>
+<h4>5. Acceptable use</h4>
+<p>Don't use the apps to break the law, infringe anyone's rights, or misrepresent quotes, invoices, or records to your own customers. For the fitness apps, the guardrails in the app (healthy-rate limits, calorie floor) are part of the product — don't treat the app as a way around them.</p>
+<h4>6. Provided "as is"</h4>
+<p>The apps are provided <strong>"as is" and "as available," without warranties of any kind</strong>, express or implied — including merchantability, fitness for a particular purpose, accuracy of calculations, and uninterrupted or error-free operation — to the maximum extent allowed by law. Software has bugs; browsers change; we work to fix problems but do not promise any app is error-free or will work on every device or browser forever.</p>
+<h4>7. Limitation of liability</h4>
+<p>To the maximum extent allowed by law:</p>
+<ul>
+<li>We are **not liable for indirect, incidental, special, or consequential</li>
+</ul>
+<p>damages** — including lost profits, lost or mispriced jobs, lost data, or business interruption — arising from use of the apps.</p>
+<ul>
+<li>Our total liability for any claim connected to an app is limited to the</li>
+</ul>
+<p><strong>amount you paid for that app</strong>.</p>
+<ul>
+<li>Nothing in these terms limits liability that cannot legally be limited.</li>
+</ul>
+<h4>8. Refunds</h4>
+<p>Refunds are handled <strong>by the storefront you bought from, under that storefront's policy</strong> — Gumroad's refund policy for Gumroad purchases, and Google Play's refund policy for Play purchases. These terms do not add to, replace, or override the storefront's refund rules. If a file is defective and won't open, contact us at whitewolfoklahoma@gmail.com and we'll fix or replace the file.</p>
+<h4>9. Updates and changes to these terms</h4>
+<ul>
+<li>We may release updated versions of an app. Updates may add, change, or</li>
+</ul>
+<p>remove features.</p>
+<ul>
+<li>We may update these terms. The version you agreed to is recorded in the</li>
+</ul>
+<p>app (version number and date) at first-run acceptance. If terms change, the app may ask you to accept the new version once on next open. Updated terms apply going forward, not retroactively.</p>
+<ul>
+<li>If you don't agree to an updated version of the terms, stop using the app.</li>
+</ul>
+<h4>10. Governing law</h4>
+<p>These terms are governed by the laws of the <strong>State of Oklahoma</strong>, USA. (Attorney to confirm governing law and venue before publication.)</p>
+<h4>11. Contact</h4>
+<p>White Wolf Tree Service LLC (White Wolf Digital) — whitewolfoklahoma@gmail.com.</p>
+<hr>
+<h4>CONNECTED FEATURES — takes effect only when these features ship</h4>
+<p><em>The sections below apply only to future connected features (device sync via Health Connect, AI voice logging, and the AI Goal Preview in ForgeFit). They do not apply to the current offline versions, which never transmit data.</em></p>
+<ul>
+<li><strong>Opt-in only.</strong> Connected features are off by default. Each one asks for</li>
+</ul>
+<p>your separate, explicit consent — on its own consent screen, in plain language — before anything leaves your device. Declining never disables the app's offline features.</p>
+<ul>
+<li><strong>What gets sent.</strong> Only what the consent screen names, only when you use</li>
+</ul>
+<p>the feature: for example, a meal description (text, or audio only if cloud transcription is on) for AI voice logging, or the single photo you choose for an AI Goal Preview.</p>
+<ul>
+<li><strong>No retention by us.</strong> Our relay service passes your request to the named</li>
+</ul>
+<p>AI provider and keeps nothing — no copies of your photos, audio, transcripts, or entries are stored on our servers. Provider handling is described on the consent screen and in the Privacy Policy.</p>
+<ul>
+<li><strong>Health data stays on the device.</strong> Device sync (Health Connect) reads</li>
+</ul>
+<p>your health data on your phone and stores it in the app on your phone. It is not uploaded to us.</p>
+<ul>
+<li><strong>Allowances.</strong> Some connected features run on third-party AI services we</li>
+</ul>
+<p>pay for per use, so they may include a monthly allowance described in the app (for example, a set number of AI previews or voice entries per month), with optional additional credits. Allowances and pricing will be shown in the app before you use the feature; they are not a subscription unless the app says so in plain words.</p>
+<ul>
+<li><strong>Permissions.</strong> Connected features may request device permissions (such</li>
+</ul>
+<p>as Health Connect access or the microphone) at the moment you first use them. You can revoke permissions any time in your device settings; the related feature will simply stop working.</p>
+    <h3>Estimator Disclaimer</h3>
+<p><strong>Applies to: TreeBid Pro, SnowBid, WashPrice Pro, RoofSquares, JobProfit Tracker, FieldForms Toolkit, PaintPro, FenceDeck, MarketMaker, and the other estimating/pricing tools sold under White Wolf Digital — including bundles that contain them.</strong></p>
+<h4>Estimating aids, not finished quotes</h4>
+<ul>
+<li>These apps are <strong>estimating and record-keeping aids</strong>. Every bid, price,</li>
+</ul>
+<p>cost, measurement, and total they produce is an <strong>estimate based on the information and rates you enter</strong>.</p>
+<ul>
+<li>**You — the business owner — are responsible for verifying everything</li>
+</ul>
+<p>before you quote a customer:** measurements and quantities, site conditions, your current material and labor costs, your rates and margins, taxes, permit and license requirements, disposal rules, and any contract terms.</p>
+<ul>
+<li>Default rates, presets, and sample data included in the apps are starting</li>
+</ul>
+<p>points only. They are not market prices, not industry standards, and not a recommendation of what you should charge.</p>
+<ul>
+<li>A saved quote keeps the prices in effect when you created it (price</li>
+</ul>
+<p>snapshot). Changing your presets later does not change saved quotes — and a saved quote is still your responsibility to review before sending.</p>
+<h4>Specific tools</h4>
+<ul>
+<li><strong>TreeBid Pro:</strong> tree work is dangerous and site-specific. Difficulty</li>
+</ul>
+<p>factors and presets cannot see the actual tree, lean, rot, targets, or access. Inspect every job in person before final pricing. The "Invoice with Wave" feature is an open-and-paste handoff — TreeBid does not connect to Wave, and the invoice you send from Wave is yours.</p>
+<ul>
+<li><strong>RoofSquares / measurement tools:</strong> confirm roof measurements and pitch</li>
+</ul>
+<p>in person or by your usual method before ordering materials.</p>
+<ul>
+<li><strong>SnowBid / seasonal tools:</strong> route times, snowfall amounts, and service</li>
+</ul>
+<p>pricing vary by storm and site; seasonal contracts are your agreement with your customer, on your terms.</p>
+<ul>
+<li><strong>JobProfit Tracker:</strong> profit figures depend on the costs you enter.</li>
+</ul>
+<p>The app is not accounting or tax software and does not replace your bookkeeper or accountant.</p>
+<h4>Bottom line</h4>
+<p>If an output and your judgment disagree, trust your judgment — then fix the input. We are not responsible for jobs won, lost, or mispriced based on app outputs, within the limits of the Terms of Use.</p>
+    <h3>Privacy</h3>
+    <p>This app has no accounts and collects no data. Everything you enter is stored only on your device, in your browser/app storage, and is never uploaded, transmitted, or shared. We never see your data. Files you export (backups, quotes, PDFs) are under your control &mdash; store and send them only where you choose. If you clear your browser data, lose your device, or uninstall the app, your records may be permanently lost, so export backups regularly.</p>
+    <p class="ww-seller">Sold by White Wolf Tree Service LLC (White Wolf Digital) &mdash; whitewolfoklahoma@gmail.com</p>
+  </div>
+</div>
+
+<script>
+/* ===== White Wolf Legal Pattern v1.0 ===== */
+(function(){
+"use strict";
+var TERMS_VERSION = "1.0";
+var WW_KEY = "lockerbook_v1";
+var WW_HAS_DISC = true;
+var WWREC = null;
+function wwValid(r){ return r && typeof r === "object" && typeof r.termsVersion === "string" && !!r.termsVersion; }
+function wwVerCmp(a,b){ var pa=String(a).split("."), pb=String(b).split("."); for(var i=0;i<3;i++){ var x=parseInt(pa[i]||"0",10)||0, y=parseInt(pb[i]||"0",10)||0; if(x<y) return -1; if(x>y) return 1; } return 0; }
+function wwReadStored(){ try{ var raw = localStorage.getItem(WW_KEY); if(!raw) return null; var o = JSON.parse(raw); return (o && typeof o === "object") ? o : null; }catch(e){ return null; } }
+var _wwStored = wwReadStored();
+if(_wwStored && wwValid(_wwStored.legal)) WWREC = _wwStored.legal;
+try{
+  var _wwOrigSet = localStorage.setItem.bind(localStorage);
+  localStorage.setItem = function(k,v){
+    if(k === WW_KEY && typeof v === "string"){
+      try{ var o = JSON.parse(v); if(o && typeof o === "object" && !Array.isArray(o)){
+        if(wwValid(o.legal)){ WWREC = o.legal; }
+        else if(WWREC){ o.legal = WWREC; v = JSON.stringify(o); }
+      } }catch(e){}
+    }
+    return _wwOrigSet(k,v);
+  };
+}catch(e){}
+function wwSyncState(){ try{ if(typeof S !== "undefined" && S && typeof S === "object" && WWREC) S.legal = WWREC; }catch(e){} }
+function wwPersist(){
+  wwSyncState();
+  try{ save() }catch(e){}
+  try{ var o = wwReadStored(); if(o){ o.legal = WWREC; localStorage.setItem(WW_KEY, JSON.stringify(o)); } }catch(e){}
+}
+function wwAcceptLine(){
+  var el = document.getElementById("wwAcceptLine"); if(!el) return;
+  if(WWREC && WWREC.acceptedDate){ el.textContent = "You agreed to Terms v" + WWREC.termsVersion + " on " + WWREC.acceptedDate + "."; }
+  else { el.textContent = "You have not recorded acceptance of the Terms yet."; }
+}
+function wwOpenLegal(){ var p = document.getElementById("wwLegalPanel"); if(p){ p.hidden = false; p.scrollTop = 0; } wwAcceptLine(); }
+function wwCloseLegal(){ var p = document.getElementById("wwLegalPanel"); if(p) p.hidden = true; }
+function wwInit(){
+  var overlay = document.getElementById("wwLegalOverlay");
+  var agree = document.getElementById("wwAgree");
+  var rt = document.getElementById("wwReadTerms");
+  var rd = document.getElementById("wwReadDisc");
+  var close = document.getElementById("wwLegalClose");
+  if(rt) rt.addEventListener("click", wwOpenLegal);
+  if(rd) rd.addEventListener("click", wwOpenLegal);
+  if(close) close.addEventListener("click", wwCloseLegal);
+  var agreeCheck = document.getElementById("wwAgreeCheck");
+  if(agree) agree.disabled = !(agreeCheck && agreeCheck.checked);
+  if(agreeCheck && agree) agreeCheck.addEventListener("change", function(){ agree.disabled = !agreeCheck.checked; });
+  if(agree) agree.addEventListener("click", function(){
+    if(agree.disabled || !(agreeCheck && agreeCheck.checked)) return;
+    WWREC = { termsVersion: TERMS_VERSION, acceptedDate: new Date().toISOString().slice(0,10), disclaimerShown: WW_HAS_DISC };
+    wwPersist(); wwAcceptLine();
+    if(overlay) overlay.hidden = true;
+  });
+  wwSyncState(); wwAcceptLine();
+  if(!WWREC || wwVerCmp(WWREC.termsVersion, TERMS_VERSION) < 0){
+    if(WWREC){ var note = document.getElementById("wwUpdatedNote"); if(note) note.hidden = false; }
+    if(overlay) overlay.hidden = false;
+  }
+  var anchors = [{sel:"#app",marker:"Backup"}];
+  function wwEnsureBtn(){
+    for(var i=0;i<anchors.length;i++){
+      var a = anchors[i]; var el = document.querySelector(a.sel); if(!el) continue;
+      if(el.querySelector("[data-ww-legal-btn]")) continue;
+      var txt = el.textContent || "";
+      if(a.marker){ if(txt.toLowerCase().indexOf(a.marker.toLowerCase()) < 0) continue; }
+      else if(txt.replace(/\s+/g,"").length < 40) continue;
+      var card = document.createElement("div");
+      card.setAttribute("data-ww-legal-card","");
+      card.innerHTML = "<h3 style=\"margin:0 0 6px\">Legal</h3><p style=\"margin:0 0 10px\">Terms of Use, disclaimer and privacy for this app.</p>";
+      var b = document.createElement("button");
+      b.type = "button"; b.setAttribute("data-ww-legal-btn",""); b.textContent = "View Legal \u2014 Terms, Disclaimer & Privacy";
+      b.addEventListener("click", wwOpenLegal);
+      card.appendChild(b); el.appendChild(card);
+    }
+  }
+  wwEnsureBtn();
+  setInterval(wwEnsureBtn, 700);
+}
+if(document.readyState === "loading") document.addEventListener("DOMContentLoaded", wwInit); else wwInit();
+})();
+</script>
+</body>
+</html>
